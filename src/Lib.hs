@@ -20,7 +20,7 @@
 
 module Lib where
 
-import Control.Lens
+import Control.Lens ((^.))
 import Data.Generics.Product.Typed (HasType, typed)
 import Data.Kind
 import Data.Text (Text)
@@ -217,7 +217,8 @@ type VeryGoodBackend be =
               )
           )
       )
-      '[Text, Int, Bool, Double]
+      '[Text, Int, Bool, Double],
+    BeamSqlBackendIsString be Text
   )
 
 whereToBeam ::
@@ -240,17 +241,16 @@ whereToBeam p = \item -> case p of
     -- SqlBool instead of Bool?
     Eq lit -> column item ==. fromLiteral lit
     NotEq lit -> column item /=. fromLiteral lit
-    --GreaterThan :: Literal a -> Term be a
-    --GreaterThanOrEq :: Literal a -> Term be a
-    --LessThan :: Literal a -> Term be a
-    --LessThanOrEq :: Literal a -> Term be a
-    ---- Ints
+    GreaterThan lit -> column item >. fromLiteral lit
+    GreaterThanOrEq lit -> column item >=. fromLiteral lit
+    LessThan lit -> column item <. fromLiteral lit
+    LessThanOrEq lit -> column item <=. fromLiteral lit
     --Between :: [Int] -> Term be Int
     --NotBetween :: [Int] -> Term be Int
     --Overlap :: [Int] -> Term be Int
     ---- Strings
-    --Like :: Text -> Term be Text
-    --NotLike :: Text -> Term be Text
+    Like s -> column item `like_` val_ s
+    NotLike s -> not_ (column item `like_` val_ s)
     --ILike :: Text -> Term be Text
     --NotILike :: Text -> Term be Text
     --RegExp :: Text -> Term be Text
@@ -258,8 +258,8 @@ whereToBeam p = \item -> case p of
     --IRegExp :: Text -> Term be Text
     --NotIRegExp :: Text -> Term be Text
     --Col :: Text -> Term be Text
-    ---- Booleans
-    --Not :: Bool -> Term be Bool
+    -- Seems useless
+    Not b -> not_ (val_ b)
     _ -> undefined
 
 fromLiteral :: VeryGoodBackend be => Literal a -> QExpr be s a
@@ -300,6 +300,8 @@ selectToBeam p = do
       )
   guard_ (whereToBeam p item)
   pure item
+
+-- TODO: compare generated queries with Sequelize
 
 showQuery :: IO ()
 showQuery = dumpSqlSelect (selectToBeam queryPS)
