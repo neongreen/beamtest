@@ -26,6 +26,7 @@ import Data.Kind
 import Data.Text (Text)
 import Database.Beam
 import Database.Beam.Backend.SQL
+import Database.Beam.Backend.SQL.Builder
 -- import Database.Beam.MySQL
 -- import Database.Beam.Query.Internal
 -- import Database.MySQL.Base (defaultConnectInfo)
@@ -198,7 +199,7 @@ type family All p xs :: Constraint where
 
 type VeryGoodBackend be =
   ( BeamSqlBackend be,
-    All (HasSqlEqualityCheck be) '[Text, Int, Bool],
+    All (HasSqlEqualityCheck be) '[Text, Int, Bool, Double],
     All
       ( HasSqlValueSyntax
           ( Sql92ExpressionValueSyntax
@@ -209,7 +210,7 @@ type VeryGoodBackend be =
               )
           )
       )
-      '[Text, Int, Bool]
+      '[Text, Int, Bool, Double]
   )
 
 whereToBeam ::
@@ -222,24 +223,24 @@ whereToBeam p = \item -> case p of
   And xs -> foldr1 (&&.) (map (flip whereToBeam item) xs)
   Or xs -> foldr1 (||.) (map (flip whereToBeam item) xs)
   Is column term -> case term of
+    In lits -> undefined
     Eq lit -> eqLit (column item) lit
-  where
-    eqLit :: QExpr be s a -> Literal a -> QExpr be s Bool
-    eqLit val lit = case lit of
-      String x -> val ==. val_ x
-      Int x -> val ==. val_ x
-      -- Not handling Number, solely so that 'debug' would work. Otherwise
-      -- we can handle it just fine.
-      -- Number x -> val ==. val_ x
-      Boolean x -> val ==. val_ x
-      -- Note: the funny thing is that we can only check one level of NotNull:
-      -- https://hackage.haskell.org/package/beam-core-0.8.0.0/docs/src/Database.Beam.Query.Ord.html#CanCheckMaybeEquality
-      NotNull (String x) -> val ==. just_ (val_ x)
-      NotNull (Int x) -> val ==. just_ (val_ x)
-      NotNull (Boolean x) -> val ==. just_ (val_ x)
-      NotNull Null -> error ("whereToBeam: unacceptable literal: " ++ show lit)
-      NotNull (NotNull _) -> error ("whereToBeam: unacceptable literal: " ++ show lit)
-      Null -> isNothing_ val
+
+eqLit :: (VeryGoodBackend be) => QExpr be s a -> Literal a -> QExpr be s Bool
+eqLit val lit = case lit of
+  String x -> val ==. val_ x
+  Int x -> val ==. val_ x
+  Number x -> val ==. val_ x
+  Boolean x -> val ==. val_ x
+  -- Note: the funny thing is that we can only check one level of NotNull:
+  -- https://hackage.haskell.org/package/beam-core-0.8.0.0/docs/src/Database.Beam.Query.Ord.html#CanCheckMaybeEquality
+  NotNull (String x) -> val ==. just_ (val_ x)
+  NotNull (Int x) -> val ==. just_ (val_ x)
+  NotNull (Number x) -> val ==. just_ (val_ x)
+  NotNull (Boolean x) -> val ==. just_ (val_ x)
+  NotNull Null -> error ("whereToBeam: unacceptable literal: " ++ show lit)
+  NotNull (NotNull _) -> error ("whereToBeam: unacceptable literal: " ++ show lit)
+  Null -> isNothing_ val
 
 selectToBeam ::
   forall table be s.
@@ -266,3 +267,7 @@ selectToBeam p = do
 
 showQuery :: IO ()
 showQuery = dumpSqlSelect (selectToBeam queryPS)
+
+-- bogus, used only for showQuery
+instance HasSqlValueSyntax SqlSyntaxBuilder Double where
+  sqlValueSyntax = undefined
