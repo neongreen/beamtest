@@ -233,9 +233,10 @@ whereToBeam p = \item -> case p of
   Is column term -> case term of
     In lits -> column item `in_` map fromLiteral lits
     NotIn lits -> not_ (column item `in_` map fromLiteral lits)
-    -- Contains :: [Literal a] -> Term be a
-    -- Contained :: [Literal a] -> Term be a
-    -- Any :: [Literal a] -> Term be a
+    -- Contains :: [Literal a] -> Term be a -- not used
+    -- Contained :: [Literal a] -> Term be a -- not used
+    -- Any :: [Literal a] -> Term be a -- not used
+
     -- TODO: check "using Haskell semantics (NULLs handled properly)".
     -- Does it do the same thing as sequelize? Maybe we should return
     -- SqlBool instead of Bool?
@@ -245,19 +246,19 @@ whereToBeam p = \item -> case p of
     GreaterThanOrEq lit -> column item >=. fromLiteral lit
     LessThan lit -> column item <. fromLiteral lit
     LessThanOrEq lit -> column item <=. fromLiteral lit
-    --Between :: [Int] -> Term be Int
-    --NotBetween :: [Int] -> Term be Int
-    --Overlap :: [Int] -> Term be Int
-    ---- Strings
+    --Between :: [Int] -> Term be Int -- not used
+    --NotBetween :: [Int] -> Term be Int -- not used
+    --Overlap :: [Int] -> Term be Int -- not used
     Like s -> column item `like_` val_ s
     NotLike s -> not_ (column item `like_` val_ s)
-    --ILike :: Text -> Term be Text
-    --NotILike :: Text -> Term be Text
-    --RegExp :: Text -> Term be Text
-    --NotRegExp :: Text -> Term be Text
-    --IRegExp :: Text -> Term be Text
-    --NotIRegExp :: Text -> Term be Text
-    --Col :: Text -> Term be Text
+    --ILike :: Text -> Term be Text -- not used
+    --NotILike :: Text -> Term be Text -- not used
+    --RegExp :: Text -> Term be Text -- not used
+    --NotRegExp :: Text -> Term be Text -- not used
+    --IRegExp :: Text -> Term be Text -- not used
+    --NotIRegExp :: Text -> Term be Text -- not used
+    --Col :: Text -> Term be Text -- not used
+
     -- Seems useless
     Not b -> not_ (val_ b)
     _ -> undefined
