@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
@@ -15,6 +16,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Lib where
 
@@ -27,6 +29,7 @@ import Database.Beam.Backend.SQL
 import Database.Beam.MySQL
 import Database.Beam.Query.Internal
 import Database.MySQL.Base (defaultConnectInfo)
+import GHC.TypeLits
 import Unsafe.Coerce
 
 ----------------------------------------------------------------------------
@@ -138,12 +141,37 @@ data Term a where
   -- Booleans
   Not :: Bool -> Term Bool
 
+class NotNull a mba where
+  notNull :: Literal a -> Literal mba
+
+instance NotNull a a where
+  notNull = id
+
+instance NotNull (Maybe a) (Maybe a) where
+  notNull = id
+
+instance
+  {-# OVERLAPPING #-}
+  TypeError ('Text "notNull should not be used on Maybe") =>
+  NotNull (Maybe a) b
+  where
+  notNull = error "inaccessible"
+
+instance {-# OVERLAPPABLE #-} NotNull a (Maybe a) where
+  notNull = NotNull
+
 data Literal a where
   String :: Text -> Literal Text
   Int :: Int -> Literal Int
   Number :: Double -> Literal Double
   Boolean :: Bool -> Literal Bool
-  Null :: Literal a
+  NotNull :: Literal a -> Literal (Maybe a)
+  Null :: Literal (Maybe a)
+
+deriving instance Show (Literal a)
+
+litBoolean :: NotNull Bool mb => Bool -> Literal mb
+litBoolean = notNull . Boolean
 
 -- queryPS :: Where User
 -- queryPS =
@@ -160,7 +188,7 @@ queryPS =
   And
     [ Is email (Eq (String "artyom@example.com")),
       Or
-        [ Is disabled (Eq (Boolean False)),
+        [ Is disabled (Eq (litBoolean False)),
           Is disabled (Eq Null)
         ]
     ]
@@ -190,19 +218,28 @@ whereToBeam ::
   (VeryGoodBackend be) =>
   Where table ->
   (table (QExpr be s) -> QExpr be s Bool)
-whereToBeam p item = case p of
+whereToBeam p = \item -> case p of
   -- TODO how to do to "pure True" in Beam?
   And xs -> foldr1 (&&.) (map (flip whereToBeam item) xs)
   Or xs -> foldr1 (||.) (map (flip whereToBeam item) xs)
   Is column term -> case term of
-    Eq lit -> case lit of
-      String x -> column item ==. val_ x
-      Int x -> column item ==. val_ x
+    Eq lit -> eqLit (column item) lit
+  where
+    eqLit :: QExpr be s a -> Literal a -> QExpr be s Bool
+    eqLit val = \case
+      String x -> val ==. val_ x
+      Int x -> val ==. val_ x
       -- Not handling Number, solely so that 'debug' would work. Otherwise
       -- we can handle it just fine.
-      -- Number x -> column item ==. val_ x
-      Boolean x -> column item ==. val_ x
-      Null -> isNothing_ (column item)
+      -- Number x -> val ==. val_ x
+      Boolean x -> val ==. val_ x
+      -- Note: the funny thing is that we can only check one level of NotNull:
+      -- https://hackage.haskell.org/package/beam-core-0.8.0.0/docs/src/Database.Beam.Query.Ord.html#CanCheckMaybeEquality
+      NotNull (String x) -> val ==. just_ (val_ x)
+      NotNull (Int x) -> val ==. just_ (val_ x)
+      NotNull (Boolean x) -> val ==. just_ (val_ x)
+      Null -> isNothing_ val
+      other -> error ("whereToBeam: unacceptable literal: " ++ show other)
 
 selectToBeam ::
   forall table be s.

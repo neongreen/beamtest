@@ -27,6 +27,7 @@ dependencies:
 - mysql
 - generic-lens
 - lens
+- constraints
 
 library:
   source-dirs: src
