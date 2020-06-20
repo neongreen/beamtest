@@ -230,7 +230,7 @@ whereToBeam p = \item -> case p of
   And xs -> foldr1 (&&.) (map (flip whereToBeam item) xs)
   Or xs -> foldr1 (||.) (map (flip whereToBeam item) xs)
   Is column term -> case term of
-    In lits -> undefined
+    In lits -> column item `in_` map fromLiteral lits
     Eq lit -> column item ==. fromLiteral lit
 
 fromLiteral :: VeryGoodBackend be => Literal a -> QExpr be s a
