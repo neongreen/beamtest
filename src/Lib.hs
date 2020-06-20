@@ -124,7 +124,7 @@ data Term be a where
   Contained :: [Literal a] -> Term be a
   Any :: [Literal a] -> Term be a
   Eq :: HasSqlEqualityCheck be a => Literal a -> Term be a
-  NotEq :: Literal a -> Term be a
+  NotEq :: HasSqlEqualityCheck be a => Literal a -> Term be a
   GreaterThan :: Literal a -> Term be a
   GreaterThanOrEq :: Literal a -> Term be a
   LessThan :: Literal a -> Term be a
@@ -231,7 +231,36 @@ whereToBeam p = \item -> case p of
   Or xs -> foldr1 (||.) (map (flip whereToBeam item) xs)
   Is column term -> case term of
     In lits -> column item `in_` map fromLiteral lits
+    NotIn lits -> not_ (column item `in_` map fromLiteral lits)
+    -- Contains :: [Literal a] -> Term be a
+    -- Contained :: [Literal a] -> Term be a
+    -- Any :: [Literal a] -> Term be a
+    -- TODO: check "using Haskell semantics (NULLs handled properly)".
+    -- Does it do the same thing as sequelize? Maybe we should return
+    -- SqlBool instead of Bool?
     Eq lit -> column item ==. fromLiteral lit
+    NotEq lit -> column item /=. fromLiteral lit
+    --GreaterThan :: Literal a -> Term be a
+    --GreaterThanOrEq :: Literal a -> Term be a
+    --LessThan :: Literal a -> Term be a
+    --LessThanOrEq :: Literal a -> Term be a
+    ---- Ints
+    --Between :: [Int] -> Term be Int
+    --NotBetween :: [Int] -> Term be Int
+    --Overlap :: [Int] -> Term be Int
+    ---- Strings
+    --Like :: Text -> Term be Text
+    --NotLike :: Text -> Term be Text
+    --ILike :: Text -> Term be Text
+    --NotILike :: Text -> Term be Text
+    --RegExp :: Text -> Term be Text
+    --NotRegExp :: Text -> Term be Text
+    --IRegExp :: Text -> Term be Text
+    --NotIRegExp :: Text -> Term be Text
+    --Col :: Text -> Term be Text
+    ---- Booleans
+    --Not :: Bool -> Term be Bool
+    _ -> undefined
 
 fromLiteral :: VeryGoodBackend be => Literal a -> QExpr be s a
 fromLiteral lit = case lit of
