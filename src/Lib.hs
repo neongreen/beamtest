@@ -26,11 +26,10 @@ import Data.Kind
 import Data.Text (Text)
 import Database.Beam
 import Database.Beam.Backend.SQL
-import Database.Beam.MySQL
-import Database.Beam.Query.Internal
-import Database.MySQL.Base (defaultConnectInfo)
+-- import Database.Beam.MySQL
+-- import Database.Beam.Query.Internal
+-- import Database.MySQL.Base (defaultConnectInfo)
 import GHC.TypeLits
-import Unsafe.Coerce
 
 ----------------------------------------------------------------------------
 -- DB
@@ -226,7 +225,7 @@ whereToBeam p = \item -> case p of
     Eq lit -> eqLit (column item) lit
   where
     eqLit :: QExpr be s a -> Literal a -> QExpr be s Bool
-    eqLit val = \case
+    eqLit val lit = case lit of
       String x -> val ==. val_ x
       Int x -> val ==. val_ x
       -- Not handling Number, solely so that 'debug' would work. Otherwise
@@ -238,8 +237,9 @@ whereToBeam p = \item -> case p of
       NotNull (String x) -> val ==. just_ (val_ x)
       NotNull (Int x) -> val ==. just_ (val_ x)
       NotNull (Boolean x) -> val ==. just_ (val_ x)
+      NotNull Null -> error ("whereToBeam: unacceptable literal: " ++ show lit)
+      NotNull (NotNull _) -> error ("whereToBeam: unacceptable literal: " ++ show lit)
       Null -> isNothing_ val
-      other -> error ("whereToBeam: unacceptable literal: " ++ show other)
 
 selectToBeam ::
   forall table be s.

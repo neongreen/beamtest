@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: fbfc2be1d329382aa1994f69184200fadc11ca9d01564d619cda2a1990d5ee52
+-- hash: 6cf6aff5b6e47f23f69daaa800120d6552d48f4afe7fdd65e2376880669e785c
 
 name:           beamtest
 version:        0.1.0.0
@@ -32,6 +32,7 @@ library
       Paths_beamtest
   hs-source-dirs:
       src
+  ghc-options: -Wall
   build-depends:
       base >=4.7 && <5
     , beam-core
@@ -49,7 +50,7 @@ executable beamtest-exe
       Paths_beamtest
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
     , beam-core
@@ -69,7 +70,7 @@ test-suite beamtest-test
       Paths_beamtest
   hs-source-dirs:
       test
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
     , beam-core
