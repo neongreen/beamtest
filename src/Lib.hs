@@ -27,7 +27,7 @@ import Data.Text (Text)
 import Database.Beam
 import Database.Beam.Backend.SQL
 import Database.Beam.Backend.SQL.Builder
--- import Database.Beam.MySQL
+import Database.Beam.MySQL
 -- import Database.Beam.Query.Internal
 -- import Database.MySQL.Base (defaultConnectInfo)
 import GHC.TypeLits
@@ -106,40 +106,45 @@ main = do
 -- Model
 ----------------------------------------------------------------------------
 
-data Where table where
-  And :: [Where table] -> Where table
-  Or :: [Where table] -> Where table
-  Is :: (forall be s. table (QExpr be s) -> QExpr be s value) -> Term value -> Where table
+type Where = Where' MySQL
 
-data Term a where
+data Where' be table where
+  And :: [Where' be table] -> Where' be table
+  Or :: [Where' be table] -> Where' be table
+  Is ::
+    (forall s. table (QExpr be s) -> QExpr be s value) ->
+    Term be value ->
+    Where' be table
+
+data Term be a where
   -- Literals
-  In :: [Literal a] -> Term a
-  NotIn :: [Literal a] -> Term a
-  Contains :: [Literal a] -> Term a
-  Contained :: [Literal a] -> Term a
-  Any :: [Literal a] -> Term a
-  Eq :: Literal a -> Term a
-  NotEq :: Literal a -> Term a
-  GreaterThan :: Literal a -> Term a
-  GreaterThanOrEq :: Literal a -> Term a
-  LessThan :: Literal a -> Term a
-  LessThanOrEq :: Literal a -> Term a
+  In :: [Literal a] -> Term be a
+  NotIn :: [Literal a] -> Term be a
+  Contains :: [Literal a] -> Term be a
+  Contained :: [Literal a] -> Term be a
+  Any :: [Literal a] -> Term be a
+  Eq :: HasSqlEqualityCheck be a => Literal a -> Term be a
+  NotEq :: Literal a -> Term be a
+  GreaterThan :: Literal a -> Term be a
+  GreaterThanOrEq :: Literal a -> Term be a
+  LessThan :: Literal a -> Term be a
+  LessThanOrEq :: Literal a -> Term be a
   -- Ints
-  Between :: [Int] -> Term Int
-  NotBetween :: [Int] -> Term Int
-  Overlap :: [Int] -> Term Int
+  Between :: [Int] -> Term be Int
+  NotBetween :: [Int] -> Term be Int
+  Overlap :: [Int] -> Term be Int
   -- Strings
-  Like :: Text -> Term Text
-  NotLike :: Text -> Term Text
-  ILike :: Text -> Term Text
-  NotILike :: Text -> Term Text
-  RegExp :: Text -> Term Text
-  NotRegExp :: Text -> Term Text
-  IRegExp :: Text -> Term Text
-  NotIRegExp :: Text -> Term Text
-  Col :: Text -> Term Text
+  Like :: Text -> Term be Text
+  NotLike :: Text -> Term be Text
+  ILike :: Text -> Term be Text
+  NotILike :: Text -> Term be Text
+  RegExp :: Text -> Term be Text
+  NotRegExp :: Text -> Term be Text
+  IRegExp :: Text -> Term be Text
+  NotIRegExp :: Text -> Term be Text
+  Col :: Text -> Term be Text
   -- Booleans
-  Not :: Bool -> Term Bool
+  Not :: Bool -> Term be Bool
 
 class NotNull a mba where
   notNull :: Literal a -> Literal mba
@@ -170,6 +175,7 @@ data Literal a where
 
 deriving instance Show (Literal a)
 
+-- TODO: replace with pattern synonyms?
 litBoolean :: NotNull Bool mb => Bool -> Literal mb
 litBoolean = notNull . Boolean
 
@@ -183,7 +189,8 @@ litBoolean = notNull . Boolean
 --         ]
 --     ]
 
-queryPS :: Where UserT
+-- Can just use 'Where' in production
+queryPS :: VeryGoodBackend be => Where' be UserT
 queryPS =
   And
     [ Is email (Eq (String "artyom@example.com")),
@@ -216,7 +223,7 @@ type VeryGoodBackend be =
 whereToBeam ::
   forall be table s.
   (VeryGoodBackend be) =>
-  Where table ->
+  Where' be table ->
   (table (QExpr be s) -> QExpr be s Bool)
 whereToBeam p = \item -> case p of
   -- TODO how to do to "pure True" in Beam?
@@ -224,23 +231,23 @@ whereToBeam p = \item -> case p of
   Or xs -> foldr1 (||.) (map (flip whereToBeam item) xs)
   Is column term -> case term of
     In lits -> undefined
-    Eq lit -> eqLit (column item) lit
+    Eq lit -> column item ==. fromLiteral lit
 
-eqLit :: (VeryGoodBackend be) => QExpr be s a -> Literal a -> QExpr be s Bool
-eqLit val lit = case lit of
-  String x -> val ==. val_ x
-  Int x -> val ==. val_ x
-  Number x -> val ==. val_ x
-  Boolean x -> val ==. val_ x
+fromLiteral :: VeryGoodBackend be => Literal a -> QExpr be s a
+fromLiteral lit = case lit of
+  String x -> val_ x
+  Int x -> val_ x
+  Number x -> val_ x
+  Boolean x -> val_ x
   -- Note: the funny thing is that we can only check one level of NotNull:
   -- https://hackage.haskell.org/package/beam-core-0.8.0.0/docs/src/Database.Beam.Query.Ord.html#CanCheckMaybeEquality
-  NotNull (String x) -> val ==. just_ (val_ x)
-  NotNull (Int x) -> val ==. just_ (val_ x)
-  NotNull (Number x) -> val ==. just_ (val_ x)
-  NotNull (Boolean x) -> val ==. just_ (val_ x)
-  NotNull Null -> error ("whereToBeam: unacceptable literal: " ++ show lit)
-  NotNull (NotNull _) -> error ("whereToBeam: unacceptable literal: " ++ show lit)
-  Null -> isNothing_ val
+  NotNull (String x) -> just_ (val_ x)
+  NotNull (Int x) -> just_ (val_ x)
+  NotNull (Number x) -> just_ (val_ x)
+  NotNull (Boolean x) -> just_ (val_ x)
+  NotNull Null -> error ("fromLiteral: unacceptable literal: " ++ show lit)
+  NotNull (NotNull _) -> error ("fromLiteral: unacceptable literal: " ++ show lit)
+  Null -> nothing_
 
 selectToBeam ::
   forall table be s.
@@ -250,7 +257,7 @@ selectToBeam ::
       (DatabaseEntity be MainDb (TableEntity table))
       (MainDb (DatabaseEntity be MainDb))
   ) =>
-  Where table ->
+  Where' be table ->
   Q be MainDb s (table (QExpr be s))
 selectToBeam p = do
   -- We assume we only have one database, and that all tables in the
