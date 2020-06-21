@@ -387,7 +387,7 @@ updatePS =
     <> disabled =: Just False
 
 columnize :: Beamable table => table f -> table (Columnar' f)
-columnize = changeBeamRep (\(Columnar' x) -> Columnar' (Columnar' x))
+columnize = changeBeamRep Columnar'
 
 fromColumnar' :: Columnar' f value -> Columnar f value
 fromColumnar' (Columnar' x) = x
@@ -403,7 +403,7 @@ assignmentsToBeam assignments = \item ->
    in mconcat $
         map
           ( \(Assignment column (value :: value)) ->
-              let Columnar' (c :: QField s value) = column item' in c <-. val_ value
+              fromColumnar' (column item') <-. val_ value
           )
           assignments
 
