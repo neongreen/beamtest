@@ -21,6 +21,7 @@
 module Lib where
 
 import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Generics.Product.Typed (HasType, typed)
 import Data.Kind
 import Data.Text (Text)
@@ -28,6 +29,7 @@ import Database.Beam
 import Database.Beam.Backend.SQL
 import Database.Beam.Backend.SQL.Builder
 import Database.Beam.MySQL
+import GHC.OverloadedLabels
 -- import Database.Beam.Query.Internal
 -- import Database.MySQL.Base (defaultConnectInfo)
 import GHC.TypeLits
@@ -103,6 +105,27 @@ main = do
 -}
 
 ----------------------------------------------------------------------------
+-- Lenses
+----------------------------------------------------------------------------
+
+data Field table value = Field (forall be s. table (QExpr be s) -> QExpr be s value)
+
+instance value ~ Text => IsLabel "email" (Field UserT value) where
+  fromLabel = Field email
+
+instance value ~ Text => IsLabel "first_name" (Field UserT value) where
+  fromLabel = Field firstName
+
+instance value ~ Text => IsLabel "last_name" (Field UserT value) where
+  fromLabel = Field lastName
+
+instance value ~ Text => IsLabel "password" (Field UserT value) where
+  fromLabel = Field password
+
+instance value ~ Maybe Bool => IsLabel "disabled" (Field UserT value) where
+  fromLabel = Field disabled
+
+----------------------------------------------------------------------------
 -- Model
 ----------------------------------------------------------------------------
 
@@ -111,10 +134,7 @@ type Where = Where' MySQL
 data Where' be table where
   And :: [Where' be table] -> Where' be table
   Or :: [Where' be table] -> Where' be table
-  Is ::
-    (forall s. table (QExpr be s) -> QExpr be s value) ->
-    Term be value ->
-    Where' be table
+  Is :: Field table value -> Term be value -> Where' be table
 
 data Term be a where
   -- Literals
@@ -193,10 +213,10 @@ litBoolean = notNull . Boolean
 queryPS :: VeryGoodBackend be => Where' be UserT
 queryPS =
   And
-    [ Is email (Eq (String "artyom@example.com")),
+    [ Is #email (Eq (String "artyom@example.com")),
       Or
-        [ Is disabled (Eq (litBoolean False)),
-          Is disabled (Eq Null)
+        [ Is #disabled (Eq (litBoolean False)),
+          Is #disabled (Eq Null)
         ]
     ]
 
@@ -230,7 +250,7 @@ whereToBeam p = \item -> case p of
   -- TODO how to do to "pure True" in Beam?
   And xs -> foldr1 (&&.) (map (flip whereToBeam item) xs)
   Or xs -> foldr1 (||.) (map (flip whereToBeam item) xs)
-  Is column term -> case term of
+  Is (Field column) term -> case term of
     In lits -> column item `in_` map fromLiteral lits
     NotIn lits -> not_ (column item `in_` map fromLiteral lits)
     -- Contains :: [Literal a] -> Term be a -- not used
