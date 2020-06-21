@@ -31,6 +31,7 @@ import Database.Beam
 import Database.Beam.Backend.SQL
 import Database.Beam.Backend.SQL.Builder
 import Database.Beam.MySQL
+import Database.Beam.Schema.Tables
 import GHC.OverloadedLabels
 -- import Database.Beam.Query.Internal
 -- import Database.MySQL.Base (defaultConnectInfo)
@@ -361,7 +362,7 @@ data Assignment be table
         value
     ) =>
     Assignment
-      (forall s. table (QField s) -> QField s value)
+      (forall f. table (Columnar' f) -> Columnar' f value)
       value
 
 (=:) ::
@@ -375,7 +376,7 @@ data Assignment be table
       )
       value
   ) =>
-  (forall s. table (QField s) -> QField s value) ->
+  (forall f. table (Columnar' f) -> Columnar' f value) ->
   value ->
   [Assignment be table]
 (=:) a b = [Assignment a b]
@@ -385,10 +386,41 @@ updatePS =
   email =: "artyom@monadfix.com"
     <> disabled =: Just False
 
+columnize :: Beamable table => table f -> table (Columnar' f)
+columnize = changeBeamRep (\(Columnar' x) -> Columnar' (Columnar' x))
+
+fromColumnar' :: Columnar' f value -> Columnar f value
+fromColumnar' (Columnar' x) = x
+
 assignmentsToBeam ::
-  VeryGoodBackend be =>
+  forall be table s.
+  (Beamable table, VeryGoodBackend be) =>
   [Assignment be table] ->
   (table (QField s) -> QAssignment be s)
 assignmentsToBeam assignments = \item ->
-  mconcat $
-    map (\(Assignment column value) -> column item <-. val_ value) assignments
+  let item' :: table (Columnar' (QField s))
+      item' = columnize item
+   in mconcat $
+        map
+          ( \(Assignment column (value :: value)) ->
+              let Columnar' (c :: QField s value) = column item' in c <-. val_ value
+          )
+          assignments
+
+-- > map getAssignmentColumn updatePS
+-- ["email","disabled"]
+getAssignmentColumn ::
+  forall be table.
+  ( Beamable table,
+    HasType
+      (DatabaseEntity be MainDb (TableEntity table))
+      (MainDb (DatabaseEntity be MainDb))
+  ) =>
+  Assignment be table ->
+  Text
+getAssignmentColumn (Assignment column _) =
+  let entity :: DatabaseEntity be MainDb (TableEntity table) =
+        (mainDb :: MainDb (DatabaseEntity be MainDb))
+          ^. typed @(DatabaseEntity be MainDb (TableEntity table))
+      DatabaseEntity dt@(DatabaseTable {}) = entity
+   in fromColumnar' (column (columnize (dbTableSettings dt))) ^. fieldName
