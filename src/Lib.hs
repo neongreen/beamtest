@@ -108,22 +108,22 @@ main = do
 -- Lenses
 ----------------------------------------------------------------------------
 
-data Field table value = Field (forall be s. table (QExpr be s) -> QExpr be s value)
+data Column table value = Column (forall be s. table (QExpr be s) -> QExpr be s value)
 
-instance value ~ Text => IsLabel "email" (Field UserT value) where
-  fromLabel = Field email
+instance value ~ Text => IsLabel "email" (Column UserT value) where
+  fromLabel = Column email
 
-instance value ~ Text => IsLabel "first_name" (Field UserT value) where
-  fromLabel = Field firstName
+instance value ~ Text => IsLabel "first_name" (Column UserT value) where
+  fromLabel = Column firstName
 
-instance value ~ Text => IsLabel "last_name" (Field UserT value) where
-  fromLabel = Field lastName
+instance value ~ Text => IsLabel "last_name" (Column UserT value) where
+  fromLabel = Column lastName
 
-instance value ~ Text => IsLabel "password" (Field UserT value) where
-  fromLabel = Field password
+instance value ~ Text => IsLabel "password" (Column UserT value) where
+  fromLabel = Column password
 
-instance value ~ Maybe Bool => IsLabel "disabled" (Field UserT value) where
-  fromLabel = Field disabled
+instance value ~ Maybe Bool => IsLabel "disabled" (Column UserT value) where
+  fromLabel = Column disabled
 
 ----------------------------------------------------------------------------
 -- Model
@@ -134,7 +134,7 @@ type Where = Where' MySQL
 data Where' be table where
   And :: [Where' be table] -> Where' be table
   Or :: [Where' be table] -> Where' be table
-  Is :: Field table value -> Term be value -> Where' be table
+  Is :: Column table value -> Term be value -> Where' be table
 
 data Term be a where
   -- Literals
@@ -250,7 +250,7 @@ whereToBeam p = \item -> case p of
   -- TODO how to do to "pure True" in Beam?
   And xs -> foldr1 (&&.) (map (flip whereToBeam item) xs)
   Or xs -> foldr1 (||.) (map (flip whereToBeam item) xs)
-  Is (Field column) term -> case term of
+  Is (Column column) term -> case term of
     In lits -> column item `in_` map fromLiteral lits
     NotIn lits -> not_ (column item `in_` map fromLiteral lits)
     -- Contains :: [Literal a] -> Term be a -- not used
