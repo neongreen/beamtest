@@ -24,7 +24,9 @@ import Control.Lens ((^.))
 import Data.Generics.Labels ()
 import Data.Generics.Product.Typed (HasType, typed)
 import Data.Kind
+import Data.String
 import Data.Text (Text)
+import Data.Void
 import Database.Beam
 import Database.Beam.Backend.SQL
 import Database.Beam.Backend.SQL.Builder
@@ -105,10 +107,11 @@ main = do
 -}
 
 ----------------------------------------------------------------------------
--- Lenses
+-- Labels
 ----------------------------------------------------------------------------
 
-data Column table value = Column (forall be s. table (QExpr be s) -> QExpr be s value)
+data Column table value
+  = Column (forall be s. VeryGoodBackend be => table (QExpr be s) -> QExpr be s value)
 
 instance value ~ Text => IsLabel "email" (Column UserT value) where
   fromLabel = Column email
@@ -124,6 +127,13 @@ instance value ~ Text => IsLabel "password" (Column UserT value) where
 
 instance value ~ Maybe Bool => IsLabel "disabled" (Column UserT value) where
   fromLabel = Column disabled
+
+----------------------------------------------------------------------------
+-- Cheat
+----------------------------------------------------------------------------
+
+instance IsString (Column table value) where
+  fromString name = Column (\_ -> QExpr (\_ -> fieldE (unqualifiedField (fromString name))))
 
 ----------------------------------------------------------------------------
 -- Model
@@ -191,13 +201,16 @@ data Literal a where
   Number :: Double -> Literal Double
   Boolean :: Bool -> Literal Bool
   NotNull :: Literal a -> Literal (Maybe a)
-  Null :: Literal (Maybe a)
+  -- Null :: Literal (Maybe a)
+  Null :: Literal (Maybe Void)
 
 deriving instance Show (Literal a)
 
 -- TODO: replace with pattern synonyms?
 litBoolean :: NotNull Bool mb => Bool -> Literal mb
 litBoolean = notNull . Boolean
+
+instance BeamSqlBackend be => HasSqlEqualityCheck be Void
 
 -- queryPS :: Where User
 -- queryPS =
@@ -213,10 +226,10 @@ litBoolean = notNull . Boolean
 queryPS :: VeryGoodBackend be => Where' be UserT
 queryPS =
   And
-    [ Is #email (Eq (String "artyom@example.com")),
+    [ Is "email" (Eq (String "artyom@example.com")),
       Or
-        [ Is #disabled (Eq (litBoolean False)),
-          Is #disabled (Eq Null)
+        [ Is "disabled" (Eq (Boolean False)),
+          Is "disabled" (Eq Null)
         ]
     ]
 
