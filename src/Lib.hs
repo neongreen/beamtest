@@ -245,32 +245,28 @@ whereToBeam ::
   forall be table s.
   (VeryGoodBackend be) =>
   Where' be table ->
-  (table (QExpr be s) -> QExpr be s Bool)
+  (table (QExpr be s) -> QExpr be s SqlBool)
 whereToBeam p = \item -> case p of
   -- TODO how to do to "pure True" in Beam?
-  And xs -> foldr1 (&&.) (map (flip whereToBeam item) xs)
-  Or xs -> foldr1 (||.) (map (flip whereToBeam item) xs)
+  And xs -> foldr1 (&&?.) (map (flip whereToBeam item) xs)
+  Or xs -> foldr1 (||?.) (map (flip whereToBeam item) xs)
   Is (Column column) term -> case term of
-    In lits -> column item `in_` map fromLiteral lits
-    NotIn lits -> not_ (column item `in_` map fromLiteral lits)
+    In lits -> sqlBool_ (column item `in_` map fromLiteral lits)
+    NotIn lits -> sqlBool_ (not_ (column item `in_` map fromLiteral lits))
     -- Contains :: [Literal a] -> Term be a -- not used
     -- Contained :: [Literal a] -> Term be a -- not used
     -- Any :: [Literal a] -> Term be a -- not used
-
-    -- TODO: check "using Haskell semantics (NULLs handled properly)".
-    -- Does it do the same thing as sequelize? Maybe we should return
-    -- SqlBool instead of Bool?
-    Eq lit -> column item ==. fromLiteral lit
-    NotEq lit -> column item /=. fromLiteral lit
-    GreaterThan lit -> column item >. fromLiteral lit
-    GreaterThanOrEq lit -> column item >=. fromLiteral lit
-    LessThan lit -> column item <. fromLiteral lit
-    LessThanOrEq lit -> column item <=. fromLiteral lit
+    Eq lit -> column item ==?. fromLiteral lit
+    NotEq lit -> column item /=?. fromLiteral lit
+    GreaterThan lit -> sqlBool_ (column item >. fromLiteral lit)
+    GreaterThanOrEq lit -> sqlBool_ (column item >=. fromLiteral lit)
+    LessThan lit -> sqlBool_ (column item <. fromLiteral lit)
+    LessThanOrEq lit -> sqlBool_ (column item <=. fromLiteral lit)
     --Between :: [Int] -> Term be Int -- not used
     --NotBetween :: [Int] -> Term be Int -- not used
     --Overlap :: [Int] -> Term be Int -- not used
-    Like s -> column item `like_` val_ s
-    NotLike s -> not_ (column item `like_` val_ s)
+    Like s -> sqlBool_ (column item `like_` val_ s)
+    NotLike s -> sqlBool_ (not_ (column item `like_` val_ s))
     --ILike :: Text -> Term be Text -- not used
     --NotILike :: Text -> Term be Text -- not used
     --RegExp :: Text -> Term be Text -- not used
@@ -280,7 +276,7 @@ whereToBeam p = \item -> case p of
     --Col :: Text -> Term be Text -- not used
 
     -- Seems useless
-    Not b -> not_ (val_ b)
+    Not b -> sqlBool_ (not_ (val_ b))
     _ -> undefined
 
 fromLiteral :: VeryGoodBackend be => Literal a -> QExpr be s a
@@ -309,18 +305,18 @@ selectToBeam ::
   ) =>
   Where' be table ->
   Q be MainDb s (table (QExpr be s))
-selectToBeam p = do
+selectToBeam p =
   -- We assume we only have one database, and that all tables in the
   -- database have distinct types. Then we can select the table by the type.
   -- If this is not true, we can write an explicit mapping using a
   -- typeclass.
-  item <-
-    all_
-      ( (mainDb :: MainDb (DatabaseEntity be MainDb))
-          ^. typed @(DatabaseEntity be MainDb (TableEntity table))
-      )
-  guard_ (whereToBeam p item)
-  pure item
+  filter_'
+    (whereToBeam p)
+    ( all_
+        ( (mainDb :: MainDb (DatabaseEntity be MainDb))
+            ^. typed @(DatabaseEntity be MainDb (TableEntity table))
+        )
+    )
 
 -- TODO: compare generated queries with Sequelize
 
