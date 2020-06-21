@@ -339,3 +339,56 @@ showQuery = dumpSqlSelect (selectToBeam queryPS)
 -- bogus, used only for showQuery
 instance HasSqlValueSyntax SqlSyntaxBuilder Double where
   sqlValueSyntax = undefined
+
+----------------------------------------------------------------------------
+-- Updates
+----------------------------------------------------------------------------
+
+-- Note: we have to be able to get column names and values from a list of
+-- assignments, because we want to be able to write them to Redis. We assume
+-- that we'll only use MySQL and Redis.
+
+data Assignment be table
+  = forall value.
+    ( HasSqlValueSyntax
+        ( Sql92ExpressionValueSyntax
+            ( Sql92SelectTableExpressionSyntax
+                ( Sql92SelectSelectTableSyntax
+                    (Sql92SelectSyntax (BeamSqlBackendSyntax be))
+                )
+            )
+        )
+        value
+    ) =>
+    Assignment
+      (forall s. table (QField s) -> QField s value)
+      value
+
+(=:) ::
+  ( HasSqlValueSyntax
+      ( Sql92ExpressionValueSyntax
+          ( Sql92SelectTableExpressionSyntax
+              ( Sql92SelectSelectTableSyntax
+                  (Sql92SelectSyntax (BeamSqlBackendSyntax be))
+              )
+          )
+      )
+      value
+  ) =>
+  (forall s. table (QField s) -> QField s value) ->
+  value ->
+  [Assignment be table]
+(=:) a b = [Assignment a b]
+
+updatePS :: [Assignment MySQL UserT]
+updatePS =
+  email =: "artyom@monadfix.com"
+    <> disabled =: Just False
+
+assignmentsToBeam ::
+  VeryGoodBackend be =>
+  [Assignment be table] ->
+  (table (QField s) -> QAssignment be s)
+assignmentsToBeam assignments = \item ->
+  mconcat $
+    map (\(Assignment column value) -> column item <-. val_ value) assignments
