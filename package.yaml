@@ -28,6 +28,7 @@ dependencies:
 - generic-lens
 - lens
 - constraints
+- bytestring
 
 ghc-options:
 - -Wall

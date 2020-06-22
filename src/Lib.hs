@@ -1,14 +1,18 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -17,6 +21,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Lib where
 
@@ -47,6 +52,20 @@ data MainDb f = MainDb
 
 mainDb :: DatabaseSettings be MainDb
 mainDb = defaultDbSettings
+
+----------------------------------------------------------------------------
+-- Mapping
+----------------------------------------------------------------------------
+
+data Column table value
+  = Column (forall be s. VeryGoodBackend be => table (QExpr be s) -> QExpr be s value)
+  deriving (Functor)
+
+class TableColumn table (name :: Symbol) value | name table -> value where
+  tableColumn :: Column table value
+
+instance TableColumn table name value => IsLabel name (Column table value) where
+  fromLabel = tableColumn @_ @name
 
 ----------------------------------------------------------------------------
 -- User
@@ -111,23 +130,15 @@ main = do
 -- Labels
 ----------------------------------------------------------------------------
 
-data Column table value
-  = Column (forall be s. VeryGoodBackend be => table (QExpr be s) -> QExpr be s value)
+instance TableColumn UserT "email" Text where tableColumn = Column email
 
-instance value ~ Text => IsLabel "email" (Column UserT value) where
-  fromLabel = Column email
+instance TableColumn UserT "first_name" Text where tableColumn = Column firstName
 
-instance value ~ Text => IsLabel "first_name" (Column UserT value) where
-  fromLabel = Column firstName
+instance TableColumn UserT "last_name" Text where tableColumn = Column lastName
 
-instance value ~ Text => IsLabel "last_name" (Column UserT value) where
-  fromLabel = Column lastName
+instance TableColumn UserT "password" Text where tableColumn = Column password
 
-instance value ~ Text => IsLabel "password" (Column UserT value) where
-  fromLabel = Column password
-
-instance value ~ Maybe Bool => IsLabel "disabled" (Column UserT value) where
-  fromLabel = Column disabled
+instance TableColumn UserT "disabled" (Maybe Bool) where tableColumn = Column disabled
 
 ----------------------------------------------------------------------------
 -- Cheat
@@ -178,23 +189,30 @@ data Term be a where
   Not :: Bool -> Term be Bool
 
 class NotNull a mba where
-  notNull :: Literal a -> Literal mba
+  toNotNull :: Literal a -> Literal mba
+  fromNotNull :: Literal mba -> Maybe (Literal a)
 
 instance NotNull a a where
-  notNull = id
+  toNotNull = id
+  fromNotNull = Just
 
 instance NotNull (Maybe a) (Maybe a) where
-  notNull = id
+  toNotNull = id
+  fromNotNull = Just -- TODO this smells fishy
 
 instance
   {-# OVERLAPPING #-}
-  TypeError ('Text "notNull should not be used on Maybe") =>
+  TypeError ('Text "NotNull should not be used on Maybe") =>
   NotNull (Maybe a) b
   where
-  notNull = error "inaccessible"
+  toNotNull = error "inaccessible"
+  fromNotNull = error "inaccessible"
 
 instance {-# OVERLAPPABLE #-} NotNull a (Maybe a) where
-  notNull = NotNull
+  toNotNull = NotNull
+  fromNotNull = \case
+    NotNull a -> Just a
+    _ -> Nothing
 
 data Literal a where
   String :: Text -> Literal Text
@@ -202,14 +220,18 @@ data Literal a where
   Number :: Double -> Literal Double
   Boolean :: Bool -> Literal Bool
   NotNull :: Literal a -> Literal (Maybe a)
-  -- Null :: Literal (Maybe a)
-  Null :: Literal (Maybe Void)
+  Null :: Literal (Maybe a)
+
+-- Null :: Literal (Maybe Void)
 
 deriving instance Show (Literal a)
 
--- TODO: replace with pattern synonyms?
-litBoolean :: NotNull Bool mb => Bool -> Literal mb
-litBoolean = notNull . Boolean
+-- GHC doesn't let us write the signature
+-- pattern Boolean' :: NotNull Bool mba => Bool -> Literal mba
+pattern Boolean' a <-
+  (fromNotNull -> Just (Boolean a))
+  where
+    Boolean' a = toNotNull (Boolean a)
 
 instance BeamSqlBackend be => HasSqlEqualityCheck be Void
 
@@ -227,10 +249,10 @@ instance BeamSqlBackend be => HasSqlEqualityCheck be Void
 queryPS :: VeryGoodBackend be => Where' be UserT
 queryPS =
   And
-    [ Is "email" (Eq (String "artyom@example.com")),
+    [ Is #email (Eq (String "artyom@example.com")),
       Or
-        [ Is "disabled" (Eq (Boolean False)),
-          Is "disabled" (Eq Null)
+        [ Is #disabled (Eq (Boolean' False)),
+          Is #disabled (Eq Null)
         ]
     ]
 

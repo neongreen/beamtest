@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 6cf6aff5b6e47f23f69daaa800120d6552d48f4afe7fdd65e2376880669e785c
+-- hash: da4caed87a56c400fd81353323572d480d71cae6f6bd6b3dac5caa33b0a6664b
 
 name:           beamtest
 version:        0.1.0.0
@@ -37,6 +37,7 @@ library
       base >=4.7 && <5
     , beam-core
     , beam-mysql
+    , bytestring
     , constraints
     , generic-lens
     , lens
@@ -56,6 +57,7 @@ executable beamtest-exe
     , beam-core
     , beam-mysql
     , beamtest
+    , bytestring
     , constraints
     , generic-lens
     , lens
@@ -76,6 +78,7 @@ test-suite beamtest-test
     , beam-core
     , beam-mysql
     , beamtest
+    , bytestring
     , constraints
     , generic-lens
     , lens
